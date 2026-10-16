@@ -49,10 +49,25 @@
             android:exported="false"
             android:launchMode="singleTask"/>
 
+        <activity
+            android:name=".HistoryActivity"
+            android:exported="false"
+            android:launchMode="singleTop"/>
+
         <service
             android:name=".KeeperService"
             android:exported="false"
             android:foregroundServiceType="camera|location"/>
+
+        <service
+            android:name=".NotificationRelay"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService"/>
+            </intent-filter>
+        </service>
 
     </application>
 </manifest>
