@@ -20,6 +20,8 @@
     <!-- Solid black button, white text, no animation, no ripple -->
     <style name="BwButton" parent="Widget.AppCompat.Button">
         <item name="android:background">#000000</item>
+        <item name="android:backgroundTint">#000000</item>
+        <item name="backgroundTint">#000000</item>
         <item name="android:textColor">#FFFFFF</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:textSize">14sp</item>
@@ -32,6 +34,8 @@
     <!-- Inverted for the dark drawer: white button, black text -->
     <style name="BwButtonInverted" parent="Widget.AppCompat.Button">
         <item name="android:background">#FFFFFF</item>
+        <item name="android:backgroundTint">#FFFFFF</item>
+        <item name="backgroundTint">#FFFFFF</item>
         <item name="android:textColor">#000000</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:textSize">14sp</item>
