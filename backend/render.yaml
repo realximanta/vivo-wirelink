@@ -1,13 +1,15 @@
 # language: yaml, file: backend/render.yaml
 # Render Blueprint — optional but lets you spin up the service from a single click.
+# language: yaml, file: backend/render.yaml
 services:
   - type: web
     name: vivo-wirelink
-    runtime: docker
+    runtime: go
     plan: free
     region: oregon
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    rootDir: backend
+    buildCommand: go build -o server .
+    startCommand: ./server
     healthCheckPath: /ping
     autoDeploy: false
     envVars:
