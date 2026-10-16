@@ -5,13 +5,6 @@
         Do NOT declare it here — a duplicate id would break the build.
     -->
 
-    <!-- keeper screen -->
-    <string name="keeper_title">vivo WireLink</string>
-    <string name="keeper_device_prefix">device:</string>
-
-    <!-- admin screen -->
-    <string name="admin_title">admin</string>
-
     <!-- shared -->
     <string name="content_desc_preview">preview</string>
 </resources>
