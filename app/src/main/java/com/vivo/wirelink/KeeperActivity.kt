@@ -15,6 +15,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.vivo.wirelink.databinding.ActivityKeeperBinding
 
@@ -60,6 +61,7 @@ class KeeperActivity : AppCompatActivity() {
         }
 
         b.btnBattery.setOnClickListener { requestBatteryExemption() }
+        b.btnNotifAccess.setOnClickListener { openNotificationAccess() }
 
         b.btnStart.setOnClickListener {
             val i = Intent(this, KeeperService::class.java)
@@ -85,12 +87,19 @@ class KeeperActivity : AppCompatActivity() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         b.btnBattery.isEnabled = !pm.isIgnoringBatteryOptimizations(packageName)
 
+        b.btnNotifAccess.isEnabled = !isNotificationAccessGranted()
+
         b.btnHide.isEnabled = isLauncherEnabled()
         b.btnRestore.isEnabled = !isLauncherEnabled()
     }
 
     private fun has(permission: String): Boolean =
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
+    private fun isNotificationAccessGranted(): Boolean {
+        return NotificationManagerCompat.getEnabledListenerPackages(this)
+            .contains(packageName)
+    }
 
     private fun isLauncherEnabled(): Boolean {
         val state = packageManager.getComponentEnabledSetting(
@@ -113,12 +122,22 @@ class KeeperActivity : AppCompatActivity() {
             .onFailure { toast("open battery settings manually") }
     }
 
+    private fun openNotificationAccess() {
+        val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+        runCatching { startActivity(intent) }
+            .onFailure {
+                // some OEMs bury it — fall back to the top-level settings
+                runCatching { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+                    .onFailure { toast("open settings manually") }
+            }
+    }
+
     private fun confirmHide() {
         AlertDialog.Builder(this)
             .setTitle("Hide launcher icon?")
             .setMessage(
                 "The app icon disappears from the home screen and app drawer.\n\n" +
-                "To bring it back: open Settings → Apps → vivo WireLink → Open, " +
+                "To bring it back: open Settings -> Apps -> vivo WireLink -> Open, " +
                 "then tap 'restore icon' here. Uninstalling also restores it."
             )
             .setPositiveButton("Hide") { _, _ -> hideIcon() }
