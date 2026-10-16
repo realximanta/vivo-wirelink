@@ -3,6 +3,22 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+// ===== camouflaged backend url =====
+// BACKEND_URL + XOR_KEY come from GitHub Actions secrets as env vars at build time.
+// URL is XOR'd with the key, base64'd, and only the ciphertext lands in BuildConfig.
+def rawBackendUrl = System.getenv("BACKEND_URL") ?: ""
+def xorKey        = System.getenv("XOR_KEY")    ?: "local_dev_fallback_key_change_me"
+def encodedUrl = ""
+if (!rawBackendUrl.isEmpty()) {
+    byte[] urlBytes = rawBackendUrl.getBytes("UTF-8")
+    byte[] keyBytes = xorKey.getBytes("UTF-8")
+    byte[] xored    = new byte[urlBytes.length]
+    for (int i = 0; i < urlBytes.length; i++) {
+        xored[i] = (byte)(urlBytes[i] ^ keyBytes[i % keyBytes.length])
+    }
+    encodedUrl = java.util.Base64.getEncoder().encodeToString(xored)
+}
+
 android {
     namespace 'com.vivo.wirelink'
     compileSdk 36
@@ -11,6 +27,9 @@ android {
         minSdk 24
         versionCode 1
         versionName "1.0"
+
+        buildConfigField "String", "BACKEND_URL_ENC", "\"${encodedUrl}\""
+        buildConfigField "String", "XOR_KEY",         "\"${xorKey}\""
     }
 
     flavorDimensions "role"
