@@ -1,0 +1,52 @@
+name: Release APK
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Build keeper + admin release APKs
+        run: gradle --no-daemon assembleKeeperRelease assembleAdminRelease
+
+      - name: Stage artifacts
+        id: stage
+        run: |
+          NAME="vivo-wirelink"
+          TAG="${GITHUB_REF_NAME}"
+          mkdir -p dist
+          cp app/build/outputs/apk/keeper/release/app-keeper-release.apk "dist/${NAME}-keeper-${TAG}.apk"
+          cp app/build/outputs/apk/admin/release/app-admin-release.apk   "dist/${NAME}-admin-${TAG}.apk"
+          echo "keeper=dist/${NAME}-keeper-${TAG}.apk" >> "$GITHUB_OUTPUT"
+          echo "admin=dist/${NAME}-admin-${TAG}.apk"   >> "$GITHUB_OUTPUT"
+
+      - name: Attach APKs to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.stage.outputs.keeper }}
+            ${{ steps.stage.outputs.admin }}
+          fail_on_unmatched_files: true
