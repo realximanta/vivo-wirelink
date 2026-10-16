@@ -14,7 +14,7 @@
         android:padding="20dp"
         android:background="#FFFFFF">
 
-        <!-- top row: menu button + status -->
+        <!-- top row: menu + status -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -72,16 +72,37 @@
             android:layout_marginTop="8dp"
             android:text="rear camera"/>
 
-        <!-- preview area -->
-        <ImageView
-            android:id="@+id/ivPreview"
+        <!-- scrollable content area: map + photo -->
+        <ScrollView
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:layout_marginTop="16dp"
-            android:background="#EEEEEE"
-            android:contentDescription="preview"
-            android:scaleType="fitCenter"/>
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <org.osmdroid.views.MapView
+                    android:id="@+id/mapView"
+                    android:layout_width="match_parent"
+                    android:layout_height="260dp"
+                    android:background="#EEEEEE"/>
+
+                <ImageView
+                    android:id="@+id/ivPreview"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:minHeight="220dp"
+                    android:background="#EEEEEE"
+                    android:contentDescription="@string/content_desc_preview"
+                    android:scaleType="fitCenter"
+                    android:adjustViewBounds="true"/>
+            </LinearLayout>
+        </ScrollView>
     </LinearLayout>
 
     <!-- ============ DRAWER ============ -->
@@ -113,6 +134,14 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="sign in"/>
+
+        <Button
+            android:id="@+id/btnHistory"
+            style="@style/BwButtonInverted"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="history"/>
 
         <Button
             android:id="@+id/btnLogout"
