@@ -32,6 +32,9 @@ jobs:
           gradle-version: '8.11.1'
 
       - name: Build keeper + admin release APKs
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+          XOR_KEY:     ${{ secrets.XOR_KEY }}
         run: gradle --no-daemon assembleKeeperRelease assembleAdminRelease
 
       - name: Stage artifacts
