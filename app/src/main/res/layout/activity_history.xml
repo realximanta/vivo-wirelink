@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#FFFFFF">
+
+    <!-- ===== top bar: back + title ===== -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="16dp">
+
+        <Button
+            android:id="@+id/btnBack"
+            style="@style/BwButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:minWidth="0dp"
+            android:padding="0dp"
+            android:text="←"
+            android:textSize="18sp"/>
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:text="history"
+            android:textColor="#000000"
+            android:textSize="18sp"
+            android:textStyle="bold"/>
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#000000"/>
+
+    <!-- ===== filter chips ===== -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="12dp">
+
+        <Button
+            android:id="@+id/chipAll"
+            style="@style/BwButtonInverted"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="#000000"
+            android:backgroundTint="#000000"
+            android:textColor="#FFFFFF"
+            android:minHeight="36dp"
+            android:textSize="12sp"
+            android:text="all"/>
+
+        <Button
+            android:id="@+id/chipLoc"
+            style="@style/BwButtonInverted"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:background="#000000"
+            android:backgroundTint="#000000"
+            android:textColor="#FFFFFF"
+            android:minHeight="36dp"
+            android:textSize="12sp"
+            android:text="📍 loc"/>
+
+        <Button
+            android:id="@+id/chipCam"
+            style="@style/BwButtonInverted"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:background="#000000"
+            android:backgroundTint="#000000"
+            android:textColor="#FFFFFF"
+            android:minHeight="36dp"
+            android:textSize="12sp"
+            android:text="📸 cam"/>
+
+        <Button
+            android:id="@+id/chipNotif"
+            style="@style/BwButtonInverted"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:background="#000000"
+            android:backgroundTint="#000000"
+            android:textColor="#FFFFFF"
+            android:minHeight="36dp"
+            android:textSize="12sp"
+            android:text="🔔 notif"/>
+    </LinearLayout>
+
+    <!-- ===== count line ===== -->
+    <TextView
+        android:id="@+id/tvCount"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="8dp"
+        android:text="0 entries · last 12 h"
+        android:textColor="#444444"
+        android:textSize="12sp"/>
+
+    <!-- ===== list or empty state ===== -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvHistory"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingHorizontal="12dp"
+            android:paddingBottom="12dp"
+            android:scrollbars="vertical"/>
+
+        <TextView
+            android:id="@+id/tvEmpty"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="no entries yet"
+            android:textColor="#999999"
+            android:textSize="14sp"
+            android:visibility="gone"/>
+    </FrameLayout>
+
+</LinearLayout>
