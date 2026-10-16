@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Base app theme: black status bar, white surface, no action bar -->
+    <style name="Theme.VivoWireLink" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#000000</item>
+        <item name="colorPrimaryVariant">#000000</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#000000</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="android:windowBackground">#FFFFFF</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+        <item name="android:textColorPrimary">#000000</item>
+        <item name="android:textColorSecondary">#444444</item>
+    </style>
+
+    <!-- Solid black button, white text, no animation, no ripple -->
+    <style name="BwButton" parent="Widget.AppCompat.Button">
+        <item name="android:background">#000000</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:minHeight">44dp</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+    </style>
+
+    <!-- Inverted for the dark drawer: white button, black text -->
+    <style name="BwButtonInverted" parent="Widget.AppCompat.Button">
+        <item name="android:background">#FFFFFF</item>
+        <item name="android:textColor">#000000</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:minHeight">44dp</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+    </style>
+
+</resources>
