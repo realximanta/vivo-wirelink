@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- white V, centered, safe-zone aware for adaptive icon masking -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,36 L54,74 L76,36 L67,36 L54,60 L41,36 Z"/>
+</vector>
